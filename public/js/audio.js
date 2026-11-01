@@ -1,38 +1,42 @@
 /**
- * TempleAudioEngine
- * - Nhạc nền: Phát trực tiếp file "Nam Mô A Di Đà Phật.m4a" (/assets/bg_chant.m4a) lặp vô tận êm dịu,
- *   tự động hạ nhỏ âm lượng (ducking) khi có giọng đọc lời khấn để không bị đè tiếng hay rè/xước.
- * - Pháp khí: Tổng hợp tiếng Mõ gỗ, Đại Hồng Chung, Ống xăm nhẹ nhàng, không vượt ngưỡng 0dBFS.
- * - Giọng đọc: Hàng đợi ZeroTTS phát tuần tự mượt mà.
+ * ChapelAudioEngine
+ * - Ambient music: original synthesized soft pad (no samples, no licensed hymns) that auto-ducks
+ *   while a voice line is being read.
+ * - Sound effects: church bell, soft "amen" tap, candle chime, page turn — all Web Audio synthesis.
+ * - Voice: the browser's Web Speech API (en-US). Free, no API key, no server round-trip.
+ *   Lines are queued so only one is read at a time.
  */
-class TempleAudioEngine {
+class ChapelAudioEngine {
   constructor() {
     this.ctx = null;
     this.unlocked = false;
     this.sfxEnabled = true;
     this.bgMusicEnabled = true;
     this.ttsEnabled = true;
-    this.ttsVoice = 'maichi';
 
-    // Nhạc nền "Nam Mô A Di Đà Phật.m4a" — mặc định 65%, cho phép chỉnh trực tiếp 0% - 100%
-    const savedMusicVol = parseFloat(localStorage.getItem('temple_music_vol'));
-    const savedTtsVol = parseFloat(localStorage.getItem('temple_tts_vol'));
+    const savedMusicVol = parseFloat(this.readStore('chapel_music_vol'));
+    const savedTtsVol = parseFloat(this.readStore('chapel_tts_vol'));
     this.bgBaseVolume = Number.isFinite(savedMusicVol) ? Math.max(0, Math.min(1, savedMusicVol)) : 0.65;
     this.ttsVolume = Number.isFinite(savedTtsVol) ? Math.max(0, Math.min(1, savedTtsVol)) : 0.95;
 
-    this.useSynthMusicFallback = false;
     this.synthBgTimer = null;
-    this.bgAudio = new Audio('/assets/bg_chant.m4a');
-    this.bgAudio.loop = true;
-    this.bgAudio.preload = 'auto';
-    this.bgAudio.volume = this.bgBaseVolume;
-    this.bgAudio.onerror = () => {
-      this.useSynthMusicFallback = true;
-    };
     this.ttsQueue = [];
     this.ttsPlaying = false;
-    this.currentAudio = null;
     this.onTtsStateChange = null;
+  }
+
+  readStore(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  writeStore(key, value) {
+    try {
+      localStorage.setItem(key, String(value));
+    } catch (_) {}
   }
 
   ensureContext() {
@@ -51,7 +55,7 @@ class TempleAudioEngine {
   }
 
   // --------------------------------------------------------------------------
-  // 1. NHẠC NỀN "NAM MÔ A DI ĐÀ PHẬT.M4A" (CÓ AUTO-DUCKING KHI ĐỌC LỜI KHẤN)
+  // 1. AMBIENT PAD (soft C-major arpeggio, ducked while the voice speaks)
   // --------------------------------------------------------------------------
   getDuckedVolume() {
     return Math.max(0.08, +(this.bgBaseVolume * 0.35).toFixed(2));
@@ -61,60 +65,25 @@ class TempleAudioEngine {
     const v = Math.max(0, Math.min(1, Number(vol)));
     if (!Number.isFinite(v)) return;
     this.bgBaseVolume = v;
-    try {
-      localStorage.setItem('temple_music_vol', String(v));
-    } catch (_) {}
-    if (this.bgAudio && !this.useSynthMusicFallback) {
-      this.bgAudio.volume = this.ttsPlaying ? this.getDuckedVolume() : this.bgBaseVolume;
-    }
+    this.writeStore('chapel_music_vol', v);
   }
 
   setTtsVolume(vol) {
     const v = Math.max(0, Math.min(1, Number(vol)));
     if (!Number.isFinite(v)) return;
     this.ttsVolume = v;
-    try {
-      localStorage.setItem('temple_tts_vol', String(v));
-    } catch (_) {}
-    if (this.currentAudio) {
-      this.currentAudio.volume = this.ttsVolume;
-    }
+    this.writeStore('chapel_tts_vol', v);
   }
 
   startZenAmbience() {
-    if (!this.bgMusicEnabled) return;
-    if (this.useSynthMusicFallback) {
-      this.startDefaultZenSynthLoop();
-      return;
-    }
-    try {
-      this.bgAudio.volume = this.ttsPlaying ? this.getDuckedVolume() : this.bgBaseVolume;
-      if (this.bgAudio.paused) {
-        const p = this.bgAudio.play();
-        if (p && typeof p.catch === 'function') {
-          p.catch(() => {
-            if (this.bgAudio.error) {
-              this.useSynthMusicFallback = true;
-              this.startDefaultZenSynthLoop();
-            }
-          });
-        }
-      }
-    } catch (_) {
-      this.useSynthMusicFallback = true;
-      this.startDefaultZenSynthLoop();
-    }
-  }
-
-  startDefaultZenSynthLoop() {
-    if (!this.bgMusicEnabled || this.synthBgTimer) return;
-    const PENTATONIC = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25];
+    if (!this.bgMusicEnabled || this.synthBgTimer || !this.ctx) return;
+    const NOTES = [261.63, 329.63, 392.0, 523.25, 392.0, 329.63, 293.66, 349.23];
     let step = 0;
-    const playZenNote = () => {
+    const playNote = () => {
       if (!this.bgMusicEnabled || !this.ctx) return;
       try {
         const now = this.ctx.currentTime;
-        const freq = PENTATONIC[step % PENTATONIC.length];
+        const freq = NOTES[step % NOTES.length];
         step++;
         const vol = (this.ttsPlaying ? this.getDuckedVolume() : this.bgBaseVolume) * 0.18;
         if (vol <= 0.002) return;
@@ -125,8 +94,8 @@ class TempleAudioEngine {
         osc.frequency.setValueAtTime(freq, now);
 
         gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.linearRampToValueAtTime(vol, now + 0.6);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 4.2);
+        gain.gain.linearRampToValueAtTime(vol, now + 0.8);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 4.6);
 
         osc.connect(gain);
         gain.connect(this.ctx.destination);
@@ -135,89 +104,61 @@ class TempleAudioEngine {
           gain.disconnect();
         };
         osc.start(now);
-        osc.stop(now + 4.25);
+        osc.stop(now + 4.7);
       } catch (_) {}
     };
-    playZenNote();
-    this.synthBgTimer = setInterval(playZenNote, 3600);
+    playNote();
+    this.synthBgTimer = setInterval(playNote, 2800);
   }
 
   stopZenAmbience() {
-    try {
-      this.bgAudio.pause();
-    } catch (_) {}
     if (this.synthBgTimer) {
       clearInterval(this.synthBgTimer);
       this.synthBgTimer = null;
     }
   }
 
-  setBgDucking(ducked) {
-    if (!this.bgMusicEnabled) return;
-    try {
-      if (!this.useSynthMusicFallback && this.bgAudio) {
-        this.bgAudio.volume = ducked ? this.getDuckedVolume() : this.bgBaseVolume;
-      }
-    } catch (_) {}
-  }
-
   // --------------------------------------------------------------------------
-  // 2. TIẾNG MÕ GỖ TỤNG KINH (WOODEN FISH PERCUSSION SYNTH)
+  // 2. SOUND EFFECTS
   // --------------------------------------------------------------------------
-  playWoodenFish(pitchMultiplier = 1.0) {
+  // Soft "amen" tap: short warm sine pluck
+  playAmenTap(pitchMultiplier = 1.0) {
     if (!this.sfxEnabled) return;
     try {
       const ctx = this.ensureContext();
       const now = ctx.currentTime;
-
-      const osc1 = ctx.createOscillator();
-      const filter = ctx.createBiquadFilter();
+      const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-
-      const baseFreq = 620 * pitchMultiplier * (0.98 + Math.random() * 0.04);
-      osc1.type = 'triangle';
-      osc1.frequency.setValueAtTime(baseFreq * 1.4, now);
-      osc1.frequency.exponentialRampToValueAtTime(baseFreq, now + 0.018);
-      osc1.frequency.exponentialRampToValueAtTime(baseFreq * 0.82, now + 0.14);
-
-      filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(baseFreq * 1.15, now);
-      filter.Q.setValueAtTime(4.0, now);
-
-      gain.gain.setValueAtTime(0.001, now);
-      gain.gain.linearRampToValueAtTime(0.28, now + 0.006);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-
-      osc1.connect(filter);
-      filter.connect(gain);
+      const freq = 523.25 * pitchMultiplier * (0.99 + Math.random() * 0.02);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(0.16, now + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+      osc.connect(gain);
       gain.connect(ctx.destination);
-
-      osc1.onended = () => {
-        osc1.disconnect();
-        filter.disconnect();
+      osc.onended = () => {
+        osc.disconnect();
         gain.disconnect();
       };
-
-      osc1.start(now);
-      osc1.stop(now + 0.16);
+      osc.start(now);
+      osc.stop(now + 0.5);
     } catch (_) {}
   }
 
-  // --------------------------------------------------------------------------
-  // 3. TIẾNG ĐẠI HỒNG CHUNG (TEMPLE BRONZE BELL)
-  // --------------------------------------------------------------------------
-  playTempleBell(intensity = 1.0) {
+  // Church bell: hum / prime / minor-third tierce / quint / nominal partials
+  playChurchBell(intensity = 1.0) {
     if (!this.sfxEnabled) return;
     try {
       const ctx = this.ensureContext();
       const now = ctx.currentTime;
-
-      const base = 174;
+      const base = 220;
       const partials = [
-        { ratio: 0.5, amp: 0.22, decay: 4.2 },
-        { ratio: 1.0, amp: 0.35, decay: 3.6 },
-        { ratio: 1.506, amp: 0.16, decay: 2.4 },
-        { ratio: 2.0, amp: 0.18, decay: 1.9 }
+        { ratio: 0.5, amp: 0.2, decay: 5.0 },
+        { ratio: 1.0, amp: 0.34, decay: 4.2 },
+        { ratio: 1.2, amp: 0.18, decay: 3.2 },
+        { ratio: 1.5, amp: 0.14, decay: 2.6 },
+        { ratio: 2.0, amp: 0.16, decay: 2.0 }
       ];
 
       const master = ctx.createGain();
@@ -229,11 +170,9 @@ class TempleAudioEngine {
         const g = ctx.createGain();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(base * p.ratio, now);
-
         g.gain.setValueAtTime(0.0001, now);
-        g.gain.linearRampToValueAtTime(p.amp, now + 0.015);
+        g.gain.linearRampToValueAtTime(p.amp, now + 0.012);
         g.gain.exponentialRampToValueAtTime(0.0001, now + p.decay);
-
         osc.connect(g);
         g.connect(master);
         osc.onended = () => {
@@ -247,37 +186,20 @@ class TempleAudioEngine {
     } catch (_) {}
   }
 
-  // --------------------------------------------------------------------------
-  // 4. TIẾNG LẮC ỐNG XĂM TRE (FORTUNE STICK SHAKER)
-  // --------------------------------------------------------------------------
-  playFortuneShake() {
-    if (!this.sfxEnabled) return;
-    for (let i = 0; i < 5; i++) {
-      setTimeout(() => {
-        this.playWoodenFish(1.32 + (i % 2) * 0.16);
-      }, i * 120);
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // 5. TIẾNG CHUÔNG NGỌC DÂNG LỄ / THẮP HƯƠNG (SINGING CHIME)
-  // --------------------------------------------------------------------------
-  playIncenseChime() {
+  // Two-note chime for candles, prayers and gifts
+  playCandleChime() {
     if (!this.sfxEnabled) return;
     try {
       const ctx = this.ensureContext();
       const now = ctx.currentTime;
-      const notes = [528, 660];
-      notes.forEach((freq, idx) => {
+      [523.25, 659.25].forEach((freq, idx) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, now + idx * 0.1);
-
         gain.gain.setValueAtTime(0.0001, now + idx * 0.1);
-        gain.gain.linearRampToValueAtTime(0.10, now + idx * 0.1 + 0.015);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.1 + 1.1);
-
+        gain.gain.linearRampToValueAtTime(0.1, now + idx * 0.1 + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.1 + 1.2);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.onended = () => {
@@ -285,25 +207,52 @@ class TempleAudioEngine {
           gain.disconnect();
         };
         osc.start(now + idx * 0.1);
-        osc.stop(now + idx * 0.1 + 1.15);
+        osc.stop(now + idx * 0.1 + 1.25);
       });
     } catch (_) {}
   }
 
+  // Page turn: short band-passed noise burst (replaces the old fortune-stick shaker)
+  playPageTurn() {
+    if (!this.sfxEnabled) return;
+    try {
+      const ctx = this.ensureContext();
+      const now = ctx.currentTime;
+      const len = Math.floor(ctx.sampleRate * 0.28);
+      const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < len; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(2400, now);
+      filter.Q.setValueAtTime(0.8, now);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.12, now);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      src.onended = () => {
+        src.disconnect();
+        filter.disconnect();
+        gain.disconnect();
+      };
+      src.start(now);
+    } catch (_) {}
+  }
+
   // --------------------------------------------------------------------------
-  // 6. ZEROTTS VOICE QUEUE & PREFETCHER
+  // 3. VOICE QUEUE (Web Speech API, en-US)
   // --------------------------------------------------------------------------
   enqueueTts(text, options = {}) {
     const onStart = typeof options.onStart === 'function' ? options.onStart : null;
     const onEnd = typeof options.onEnd === 'function' ? options.onEnd : null;
-
-    if (!this.ttsEnabled) {
-      if (onStart) onStart();
-      if (onEnd) setTimeout(onEnd, 5500);
-      return;
-    }
     const clean = String(text || '').trim();
-    if (!clean) {
+
+    if (!this.ttsEnabled || !clean || !('speechSynthesis' in window)) {
       if (onStart) onStart();
       if (onEnd) setTimeout(onEnd, 5500);
       return;
@@ -315,39 +264,19 @@ class TempleAudioEngine {
       if (dropped?.onEnd) dropped.onEnd();
     }
 
-    const item = {
-      id: `tts_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      text: clean,
-      voice: (options.voice || this.ttsVoice || 'maichi').toLowerCase(),
-      url: options.url || null,
-      onStart,
-      onEnd,
-      fetchPromise: null
-    };
-
-    if (!item.url) {
-      item.fetchPromise = this.fetchZeroTtsAudio(item.text, item.voice);
-    }
-
-    this.ttsQueue.push(item);
+    this.ttsQueue.push({ text: clean, onStart, onEnd });
     this.processTtsQueue();
   }
 
-  async fetchZeroTtsAudio(text, voice = 'maichi') {
-    try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice })
-      });
-      const data = await res.json();
-      if (data && data.ok && data.url) {
-        return data;
-      }
-      return { ok: false, error: data?.error || 'ZeroTTS unavailable' };
-    } catch (err) {
-      return { ok: false, error: err.message };
+  pickVoice() {
+    const voices = window.speechSynthesis.getVoices().filter((v) => /^en[-_]US/i.test(v.lang));
+    if (!voices.length) return null;
+    const preferred = ['Samantha', 'Google US English', 'Aria', 'Jenny', 'Natural', 'Alex'];
+    for (const name of preferred) {
+      const hit = voices.find((v) => v.name.includes(name));
+      if (hit) return hit;
     }
+    return voices[0];
   }
 
   async processTtsQueue() {
@@ -356,36 +285,20 @@ class TempleAudioEngine {
     const item = this.ttsQueue.shift();
 
     try {
-      let audioUrl = item.url;
-      if (!audioUrl && item.fetchPromise) {
-        const res = await item.fetchPromise;
-        if (res && res.ok && res.url) {
-          audioUrl = res.url;
-        }
+      if (this.onTtsStateChange) {
+        this.onTtsStateChange({ speaking: true, text: item.text });
       }
-
-      if (audioUrl) {
-        this.setBgDucking(true);
-        if (this.onTtsStateChange) {
-          this.onTtsStateChange({ speaking: true, synthesizing: false, text: item.text });
-        }
-        if (item.onStart) item.onStart();
-        await this.playWavUrl(audioUrl);
-        if (item.onEnd) item.onEnd();
-      } else {
-        if (item.onStart) item.onStart();
-        if (item.onEnd) setTimeout(item.onEnd, 5500);
-      }
-    } catch (err) {
-      console.warn('[ZeroTTS Playback Warning]', err);
       if (item.onStart) item.onStart();
+      await this.speak(item.text);
+      if (item.onEnd) item.onEnd();
+    } catch (err) {
+      console.warn('[Voice Warning]', err);
       if (item.onEnd) item.onEnd();
     } finally {
       this.ttsPlaying = false;
       if (this.ttsQueue.length === 0) {
-        this.setBgDucking(false);
         if (this.onTtsStateChange) {
-          this.onTtsStateChange({ speaking: false, synthesizing: false, text: '' });
+          this.onTtsStateChange({ speaking: false, text: '' });
         }
       } else {
         setTimeout(() => this.processTtsQueue(), 250);
@@ -393,32 +306,40 @@ class TempleAudioEngine {
     }
   }
 
-  playWavUrl(url) {
+  speak(text) {
     return new Promise((resolve) => {
-      try {
-        const audio = new Audio(url);
-        this.currentAudio = audio;
-        audio.volume = this.ttsVolume;
-        audio.onended = () => {
-          this.currentAudio = null;
-          resolve();
-        };
-        audio.onerror = () => {
-          this.currentAudio = null;
-          resolve();
-        };
-        const playPromise = audio.play();
-        if (playPromise && typeof playPromise.catch === 'function') {
-          playPromise.catch(() => {
-            this.currentAudio = null;
-            resolve();
-          });
-        }
-      } catch (_) {
+      // Safety net: some browsers (and some OBS builds) never fire onend
+      const estimateMs = Math.min(30000, 2500 + text.length * 75);
+      let finished = false;
+      const done = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(safety);
         resolve();
+      };
+      const safety = setTimeout(() => {
+        try {
+          window.speechSynthesis.cancel();
+        } catch (_) {}
+        done();
+      }, estimateMs + 4000);
+
+      try {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'en-US';
+        utter.rate = 0.95;
+        utter.pitch = 1.0;
+        utter.volume = this.ttsVolume;
+        const voice = this.pickVoice();
+        if (voice) utter.voice = voice;
+        utter.onend = done;
+        utter.onerror = done;
+        window.speechSynthesis.speak(utter);
+      } catch (_) {
+        setTimeout(done, estimateMs);
       }
     });
   }
 }
 
-window.TempleAudioEngine = TempleAudioEngine;
+window.ChapelAudioEngine = ChapelAudioEngine;

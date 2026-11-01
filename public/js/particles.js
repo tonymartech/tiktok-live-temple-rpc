@@ -1,12 +1,12 @@
 /**
- * Ultra-Low-CPU 2.5D Sacred Temple Canvas Particle Engine
- * Tối ưu hóa tối đa cho OBS / TikTok Live treo máy 24/7:
- * - Giới hạn đúng 30 FPS (tiết kiệm 50–75% CPU/GPU so với 60/120Hz)
- * - Tự động tạm dừng khi tab ẩn (document.hidden)
- * - Pre-render toàn bộ Khói hương, Hạt vàng, Cánh hoa sen ra Offscreen Canvas 1 lần duy nhất
- *   (KHÔNG gọi createRadialGradient, bezierCurveTo hay shadowBlur trong vòng lặp frame!)
+ * Ultra-low-CPU canvas effects for the chapel scene (candle glow, petals, bell rings)
+ * Tuned for OBS / TikTok Live running 24/7:
+ * - Locked at 30 FPS (saves 50-75% CPU/GPU vs 60/120Hz)
+ * - Pauses automatically when the tab is hidden (document.hidden)
+ * - Glow puffs, gold sparks and petals are pre-rendered once to offscreen canvases
+ *   (no createRadialGradient, bezierCurveTo or shadowBlur inside the frame loop)
  */
-class TempleParticleEngine {
+class ChapelParticleEngine {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
@@ -16,17 +16,17 @@ class TempleParticleEngine {
     this.canvas.height = this.height;
 
     this.smokeParticles = [];
-    this.lotusPetals = [];
+    this.petals = [];
     this.goldSparks = [];
     this.soundWaves = [];
     this.floatingTexts = [];
     this.burstParticles = [];
 
-    this.incenseTips = [];
+    this.candleTips = [];
     this.smokeDensity = 1.0;
     this.time = 0;
     this.lastFrameTime = 0;
-    this.frameInterval = 1000 / 30; // Cố định 30 FPS siêu nhẹ CPU
+    this.frameInterval = 1000 / 30; // fixed 30 FPS, very light on CPU
 
     this.buildOffscreenSprites();
     this.initAmbientParticles();
@@ -35,7 +35,7 @@ class TempleParticleEngine {
   }
 
   buildOffscreenSprites() {
-    // 1. Pre-render Smoke Puff Sprite (64x64)
+    // 1. Pre-render candle-glow puff sprite (64x64)
     this.smokeSprite = document.createElement('canvas');
     this.smokeSprite.width = 64;
     this.smokeSprite.height = 64;
@@ -63,8 +63,8 @@ class TempleParticleEngine {
     gctx.arc(8, 8, 7, 0, Math.PI * 2);
     gctx.fill();
 
-    // 3. Pre-render Pink & Gold Lotus Petal Sprites (28x28)
-    this.pinkPetalSprite = this.createPetalSprite('rgba(248, 165, 194, 0.82)');
+    // 3. Pre-render white & gold petal sprites (28x28)
+    this.pinkPetalSprite = this.createPetalSprite('rgba(255, 255, 255, 0.85)'); // white petals
     this.goldPetalSprite = this.createPetalSprite('rgba(255, 218, 110, 0.82)');
   }
 
@@ -98,11 +98,11 @@ class TempleParticleEngine {
     }
 
     for (let i = 0; i < 9; i++) {
-      this.lotusPetals.push(this.createLotusPetal(true));
+      this.petals.push(this.createPetal(true));
     }
   }
 
-  createLotusPetal(randomY = false) {
+  createPetal(randomY = false) {
     return {
       x: Math.random() * this.width,
       y: randomY ? Math.random() * this.height : -30 - Math.random() * 100,
@@ -116,15 +116,15 @@ class TempleParticleEngine {
     };
   }
 
-  setIncenseTips(tips) {
-    this.incenseTips = Array.isArray(tips) ? tips : [];
+  setCandleTips(tips) {
+    this.candleTips = Array.isArray(tips) ? tips : [];
   }
 
   spawnSmokeFromTips() {
-    if (!this.incenseTips.length || this.smokeParticles.length >= 22) return;
+    if (!this.candleTips.length || this.smokeParticles.length >= 22) return;
     if (Math.random() > 0.45 * this.smokeDensity) return;
 
-    const tip = this.incenseTips[Math.floor(Math.random() * this.incenseTips.length)];
+    const tip = this.candleTips[Math.floor(Math.random() * this.candleTips.length)];
     this.smokeParticles.push({
       x: tip.x + (Math.random() - 0.5) * 6,
       y: tip.y,
@@ -139,7 +139,7 @@ class TempleParticleEngine {
     });
   }
 
-  spawnIncenseBurst(x = 540, y = 890) {
+  spawnCandleBurst(x = 540, y = 890) {
     for (let i = 0; i < 18; i++) {
       const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.1;
       const speed = 2.5 + Math.random() * 5.0;
@@ -169,7 +169,7 @@ class TempleParticleEngine {
     }
   }
 
-  spawnFloatingMerit(text = '+1 Công Đức', x = 540, y = 940, color = '#ffe082') {
+  spawnFloatingMerit(text = '+1 Blessing', x = 540, y = 940, color = '#ffe082') {
     if (this.floatingTexts.length > 8) this.floatingTexts.shift();
     this.floatingTexts.push({
       text,
@@ -183,7 +183,7 @@ class TempleParticleEngine {
 
   spawnGrandCeremonyRain() {
     for (let i = 0; i < 16; i++) {
-      this.lotusPetals.push(this.createLotusPetal(false));
+      this.petals.push(this.createPetal(false));
     }
     for (let i = 0; i < 36; i++) {
       const angle = (Math.PI * 2 * i) / 36;
@@ -196,7 +196,7 @@ class TempleParticleEngine {
         r: 3 + Math.random() * 3.5,
         alpha: 1,
         decay: 0.022 + Math.random() * 0.015,
-        color: i % 3 === 0 ? '#fff3b0' : i % 3 === 1 ? '#ffb703' : '#ff7aa2'
+        color: i % 3 === 0 ? '#fff3b0' : i % 3 === 1 ? '#ffb703' : '#ffffff'
       });
     }
   }
@@ -212,7 +212,7 @@ class TempleParticleEngine {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.width, this.height);
 
-    // 1. Hạt bụi vàng (dùng drawImage từ sparkSprite đã pre-render)
+    // 1. Gold sparks (drawImage from the pre-rendered sparkSprite)
     for (let i = 0; i < this.goldSparks.length; i++) {
       const sp = this.goldSparks[i];
       sp.y += sp.vy;
@@ -225,7 +225,7 @@ class TempleParticleEngine {
       ctx.drawImage(this.sparkSprite, sp.x - sp.size * 0.5, sp.y - sp.size * 0.5, sp.size, sp.size);
     }
 
-    // 2. Khói tâm hương (dùng drawImage từ smokeSprite đã pre-render)
+    // 2. Candle glow wisps (drawImage from the pre-rendered smokeSprite)
     this.spawnSmokeFromTips();
     for (let i = this.smokeParticles.length - 1; i >= 0; i--) {
       const p = this.smokeParticles[i];
@@ -245,20 +245,20 @@ class TempleParticleEngine {
       ctx.drawImage(this.smokeSprite, p.x - r, p.y - r, r * 2, r * 2);
     }
 
-    // 3. Cánh hoa sen rơi (dùng drawImage từ petalSprite đã pre-render)
+    // 3. Falling petals (drawImage from the pre-rendered petal sprites)
     ctx.globalAlpha = 1;
-    for (let i = this.lotusPetals.length - 1; i >= 0; i--) {
-      const petal = this.lotusPetals[i];
+    for (let i = this.petals.length - 1; i >= 0; i--) {
+      const petal = this.petals[i];
       petal.y += petal.vy;
       petal.x += petal.vx + Math.sin(this.time + petal.swayPhase) * 0.7;
       petal.rot += petal.vrot;
 
       if (petal.y > this.height + 35) {
-        if (this.lotusPetals.length > 9) {
-          this.lotusPetals.splice(i, 1);
+        if (this.petals.length > 9) {
+          this.petals.splice(i, 1);
           continue;
         } else {
-          Object.assign(petal, this.createLotusPetal(false));
+          Object.assign(petal, this.createPetal(false));
         }
       }
 
@@ -276,7 +276,7 @@ class TempleParticleEngine {
       ctx.restore();
     }
 
-    // 4. Sóng âm Đại Hồng Chung
+    // 4. Church bell sound waves
     for (let i = this.soundWaves.length - 1; i >= 0; i--) {
       const w = this.soundWaves[i];
       w.radius += 10.5;
@@ -293,7 +293,7 @@ class TempleParticleEngine {
       ctx.stroke();
     }
 
-    // 5. Hạt pháo hoa sen
+    // 5. Celebration burst particles
     for (let i = this.burstParticles.length - 1; i >= 0; i--) {
       const b = this.burstParticles[i];
       b.x += b.vx;
@@ -311,9 +311,9 @@ class TempleParticleEngine {
       ctx.fill();
     }
 
-    // 6. Chữ +Công Đức bay lên (dùng strokeText thay vì shadowBlur tốn CPU)
+    // 6. Floating +Blessings text (strokeText instead of the CPU-heavy shadowBlur)
     if (this.floatingTexts.length > 0) {
-      ctx.font = '800 27px "Be Vietnam Pro", sans-serif';
+      ctx.font = '800 27px "Inter", sans-serif';
       ctx.textAlign = 'center';
       ctx.lineWidth = 4;
       ctx.strokeStyle = 'rgba(15, 4, 2, 0.9)';
@@ -336,4 +336,4 @@ class TempleParticleEngine {
   }
 }
 
-window.TempleParticleEngine = TempleParticleEngine;
+window.ChapelParticleEngine = ChapelParticleEngine;

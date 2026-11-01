@@ -1,9 +1,9 @@
 /**
- * Live 9:16 Client Controller — Chánh Điện Đức Phật A Di Đà & Đạo Tràng Phật Tử Quỳ Lễ
- * - Hiển thị 6 Đệm Quỳ VIP (Top 6 Bảng Vàng Công Đức)
- * - Hiển thị 40 Phật Tử mặc áo lam quỳ hai bên thảm đỏ + thẻ tên người xem
- * - Hiệu ứng người xem bước dọc thảm đỏ lên trước Lư Hương Đồng dâng hương
- * - Giọng đọc ZeroTTS (Mai Chi) + Pháp khí Web Audio
+ * Live 9:16 client controller — chapel sanctuary
+ * - 6 front-row kneelers (top 6 on the Faithful Hearts leaderboard)
+ * - 40-seat congregation + name tags for the next viewers
+ * - Viewers walk up the aisle, kneel and pray at the candle stand
+ * - Voice lines read with the browser's Web Speech API (en-US) + synthesized chapel sounds
  */
 (function () {
   const params = new URLSearchParams(window.location.search);
@@ -11,7 +11,7 @@
     document.body.classList.add('obs-mode');
   }
 
-  // 1. Tự động co giãn khung 1080x1920 vừa khít Stage Wrapper (9:16)
+  // 1. Scale the 1080x1920 stage to fit the 9:16 wrapper
   const stageWrapper = document.getElementById('stageWrapper');
   const stage9x16 = document.getElementById('stage9x16');
 
@@ -24,61 +24,61 @@
   window.addEventListener('resize', fitStage);
   fitStage();
 
-  // 2. Khởi tạo Particle Engine & Audio Engine (ZeroTTS Mai Chi)
-  const canvas = document.getElementById('templeCanvas');
-  const particles = new window.TempleParticleEngine(canvas);
-  const audio = new window.TempleAudioEngine();
+  // 2. Particle engine & audio engine
+  const canvas = document.getElementById('effectsCanvas');
+  const particles = new window.ChapelParticleEngine(canvas);
+  const audio = new window.ChapelAudioEngine();
 
   function unlockAudioOnce() {
     audio.ensureContext();
     const btnUnlock = document.getElementById('btnUnlockAudio');
     if (btnUnlock) {
-      btnUnlock.textContent = '✅ Âm Thanh Chùa Đã Sẵn Sàng';
+      btnUnlock.textContent = '✅ Sound & Voice Ready';
       btnUnlock.classList.remove('gold');
       btnUnlock.classList.add('active-toggle');
     }
   }
   window.addEventListener('pointerdown', unlockAudioOnce, { once: true });
 
-  // 3. Vẽ các nén nhang đang cháy trong Lư Hương Đỉnh Đồng (x=540, y=895)
-  const incenseHolder = document.getElementById('incenseSticksHolder');
+  // 3. Draw the burning candles on the candle stand (centered at x=540, base y=895)
+  const candleHolder = document.getElementById('candleHolder');
   let renderedStickCount = 0;
 
-  function renderIncenseSticks(count) {
+  function renderCandles(count) {
     const target = Math.max(3, Math.min(27, Number(count) || 9));
-    if (target === renderedStickCount && incenseHolder.children.length > 0) return;
+    if (target === renderedStickCount && candleHolder.children.length > 0) return;
     renderedStickCount = target;
-    incenseHolder.innerHTML = '';
+    candleHolder.innerHTML = '';
 
+    const PER_TIER = 9;
     const tips = [];
     for (let i = 0; i < target; i++) {
+      const tier = Math.floor(i / PER_TIER);
+      const inTier = i % PER_TIER;
+      const tierCount = Math.min(PER_TIER, target - tier * PER_TIER);
+      const spread = tierCount === 1 ? 0 : (inTier / (tierCount - 1) - 0.5) * 2;
+      const leftPx = 65 + spread * 56 - 5;
+      const heightPx = 40 + ((i * 7) % 3) * 4;
+      const bottomPx = tier * 26;
+
       const stick = document.createElement('div');
-      stick.className = 'incense-stick';
-
-      const spread = target === 1 ? 0 : (i / (target - 1) - 0.5) * 2;
-      const leftPx = 65 + spread * 28 + Math.sin(i * 2.1) * 2;
-      const angleDeg = spread * 12 + Math.cos(i * 1.5) * 1.5;
-      const heightPx = 76 + (i % 3) * 6;
-
+      stick.className = 'candle-stick';
       stick.style.left = `${leftPx}px`;
       stick.style.height = `${heightPx}px`;
-      stick.style.transform = `rotate(${angleDeg}deg)`;
+      stick.style.bottom = `${bottomPx}px`;
 
-      const ember = document.createElement('div');
-      ember.className = 'incense-ember';
-      ember.style.animationDelay = `${(i * 0.15) % 1.1}s`;
-      stick.appendChild(ember);
-      incenseHolder.appendChild(stick);
+      const flame = document.createElement('div');
+      flame.className = 'candle-flame';
+      flame.style.animationDelay = `${(i * 0.15) % 1.1}s`;
+      stick.appendChild(flame);
+      candleHolder.appendChild(stick);
 
-      const rad = (angleDeg * Math.PI) / 180;
-      const tipX = 540 + (leftPx - 65) + Math.sin(rad) * heightPx;
-      const tipY = 895 - Math.cos(rad) * heightPx;
-      tips.push({ x: tipX, y: tipY });
+      tips.push({ x: 540 + (leftPx + 5 - 65), y: 895 - bottomPx - heightPx - 14 });
     }
-    particles.setIncenseTips(tips);
+    particles.setCandleTips(tips);
   }
 
-  // 4. Dựng Hàng 6 Đệm Quỳ VIP (Top 6 Thí Chủ trên bục gỗ y=1188)
+  // 4. Front row: 6 kneelers for the top 6 viewers (y=1188)
   const VIP_CUSHION_COORDS = [
     { x: 140, y: 1188, rank: 1 },
     { x: 268, y: 1188, rank: 2 },
@@ -97,7 +97,7 @@
       if (!dev) return '';
       return `
         <div class="vip-devotee-slot" style="left: ${slot.x}px; top: ${slot.y}px; z-index: ${12 + idx};">
-          <img src="/assets/devotee.png" alt="VIP Devotee" class="devotee-sprite" />
+          <img src="/assets/devotee.png" alt="Front row member" class="devotee-sprite" />
           <div class="vip-rank-pill">
             <span class="vip-rank-num">${slot.rank}</span>
             <span class="vip-rank-name">${escapeHtml(shortenName(dev.name, 12))}</span>
@@ -107,7 +107,7 @@
     }).join('');
   }
 
-  // 5. Dựng Đạo Tràng 40 Phật Tử Quỳ Lễ Hai Bên Thảm Đỏ (5 Hàng x 4 Cột mỗi bên)
+  // 5. Congregation: 40 seats on both sides of the aisle (5 rows x 4 columns per side)
   const congregationHall = document.getElementById('congregationHall');
   const HALL_SEAT_COORDS = [];
 
@@ -115,12 +115,12 @@
     const rows = 5;
     const colsPerSide = 4;
     for (let r = 0; r < rows; r++) {
-      const progress = r / (rows - 1); // 0 (xa) -> 1 (gần)
+      const progress = r / (rows - 1); // 0 (far) -> 1 (near)
       const y = Math.round(1290 + progress * 355); // 1290 -> 1645
       const scale = +(0.76 + progress * 0.28).toFixed(2);
 
-      // Cánh trái thảm đỏ
-      const leftInnerX = Math.round(335 - progress * 48); // mép thảm mở rộng dần
+      // Left side of the aisle
+      const leftInnerX = Math.round(335 - progress * 48); // aisle edge widens toward the viewer
       const leftOuterX = 48;
       for (let c = 0; c < colsPerSide; c++) {
         const t = c / (colsPerSide - 1);
@@ -128,7 +128,7 @@
         HALL_SEAT_COORDS.push({ side: 'L', row: r, col: c, x, y, scale });
       }
 
-      // Cánh phải thảm đỏ
+      // Right side of the aisle
       const rightInnerX = Math.round(745 + progress * 48);
       const rightOuterX = 1032;
       for (let c = 0; c < colsPerSide; c++) {
@@ -143,13 +143,13 @@
 
   function renderCongregationHall(leaderboard = []) {
     if (!congregationHall) return;
-    // Những người xếp từ hạng 7 trở đi ngồi ở các vị trí đầu tiên cạnh thảm đỏ
+    // Viewers ranked 7th and below sit in the congregation
     const hallViewers = leaderboard.slice(6);
-    const sig = JSON.stringify(hallViewers.map((d) => `${d.name}:${d.merit}`));
+    const sig = JSON.stringify(hallViewers.map((d) => `${d.name}:${d.blessings}`));
     if (sig === lastRenderedLeaderboardJson && congregationHall.children.length > 0) return;
     lastRenderedLeaderboardJson = sig;
 
-    // Ưu tiên gắn thẻ tên vào các ghế gần thảm đỏ dễ nhìn nhất
+    // Name tags go on the seats closest to the aisle first
     const labeledSeatIndices = [
       3, 4, 11, 12, 19, 20, 27, 28, 35, 36, 2, 5, 10, 13, 18, 21, 26, 29
     ];
@@ -183,7 +183,7 @@
         >
           <img
             src="/assets/devotee.png"
-            alt="Phật tử"
+            alt="Congregation member"
             class="devotee-sprite"
             style="animation-delay: ${((idx * 0.27) % 3.5).toFixed(2)}s;"
           />
@@ -193,35 +193,31 @@
     }).join('');
   }
 
-  // Preload toàn bộ 8 frame nhân vật vào bộ nhớ để chuyển frame mượt 0ms
+  // Preload every pose so frame swaps are instant
   const SPRITE_FRAMES = {
     walk1: '/assets/devotee_walk.png',
     walk2: '/assets/devotee_walk_2.png',
     kneelDown: '/assets/devotee_kneel_down.png',
     kneel: '/assets/devotee.png',
     forehead: '/assets/devotee_bow.png',
-    bowMid: '/assets/devotee_bow_mid.png',
-    prostrate: '/assets/devotee_prostrate.png',
-    prostrateDeep: '/assets/devotee_prostrate_deep.png'
+    bowMid: '/assets/devotee_bow_mid.png'
   };
   Object.values(SPRITE_FRAMES).forEach((url) => {
     const img = new Image();
     img.src = url;
   });
 
-  function pulseHallBowing() {
+  // A quarter of the congregation bows their heads for a moment
+  function pulseHallPraying() {
     if (!congregationHall) return;
     const seats = congregationHall.querySelectorAll('.hall-seat');
     seats.forEach((el, i) => {
       if (i % 4 !== 0) return;
       const img = el.querySelector('.devotee-sprite');
       if (!img) return;
-      const delay = (i % 4) * 80;
-      setTimeout(() => { img.src = SPRITE_FRAMES.forehead; }, delay);
-      setTimeout(() => { img.src = SPRITE_FRAMES.bowMid; }, delay + 140);
-      setTimeout(() => { img.src = SPRITE_FRAMES.prostrateDeep; }, delay + 300);
-      setTimeout(() => { img.src = SPRITE_FRAMES.bowMid; }, delay + 620);
-      setTimeout(() => { img.src = SPRITE_FRAMES.kneel; }, delay + 780);
+      setTimeout(() => { img.src = SPRITE_FRAMES.forehead; }, 60);
+      setTimeout(() => { img.src = SPRITE_FRAMES.bowMid; }, 700);
+      setTimeout(() => { img.src = SPRITE_FRAMES.kneel; }, 1500);
     });
   }
 
@@ -232,7 +228,7 @@
     }
   }
 
-  // Chuyển đổi tức thời giữa 8 khung hình đã giải mã sẵn trên GPU (KHÔNG BAO GIỜ BỊ MẤT HÌNH)
+  // Instant switch between pre-decoded pose frames (no flicker)
   function setCentralPose(poseKey) {
     const stack = document.getElementById('centralSpriteStack');
     if (!stack) return;
@@ -250,27 +246,17 @@
     );
   }
 
-  // Chuỗi 8 khung hình Đảnh lễ Tam Bái mượt mà (Hạ gối -> Chắp tay ngực -> Đưa lên trán -> Nghiêng 45° -> Chống tay -> Lạy sát đất -> Ngẩng lên)
-  function playThreeBowsSequence(startDelayMs = 0) {
+  // Prayer sequence: kneel down, fold hands, bow head in prayer, then look up
+  function playPrayerSequence(startDelayMs = 0) {
     schedulePose(startDelayMs, 'kneelDown');
     schedulePose(startDelayMs + 160, 'kneel');
-
-    const bowOffsets = [startDelayMs + 320, startDelayMs + 1820, startDelayMs + 3320];
-    bowOffsets.forEach((t0) => {
-      schedulePose(t0, 'forehead');            // 1. Chắp tay đưa lên trán
-      schedulePose(t0 + 170, 'bowMid');        // 2. Cúi gập lưng 45°
-      schedulePose(t0 + 330, 'prostrate');     // 3. Vươn hai tay chống xuống đệm
-      schedulePose(t0 + 490, 'prostrateDeep'); // 4. Lạy sát đất (Ngũ thể đầu địa)
-      schedulePose(t0 + 860, 'prostrate');     // 5. Bắt đầu nâng đầu lên
-      schedulePose(t0 + 1020, 'bowMid');       // 6. Nâng lưng lên góc 45°
-      schedulePose(t0 + 1180, 'kneel');        // 7. Ngồi quỳ thẳng lưng
-    });
-
-    schedulePose(startDelayMs + 4800, 'forehead');
-    schedulePose(startDelayMs + 5350, 'kneel');
+    schedulePose(startDelayMs + 700, 'forehead');
+    schedulePose(startDelayMs + 2600, 'bowMid');
+    schedulePose(startDelayMs + 3300, 'forehead');
+    schedulePose(startDelayMs + 5000, 'kneel');
   }
 
-  // Hiệu ứng thí chủ ĐỨNG ĐI BỘ từng bước dọc thảm đỏ rồi Hạ gối Quỳ Đảnh Lễ (trên cùng 1 nhân vật, không bao giờ mất hình)
+  // A viewer walks up the aisle, then kneels to pray (same sprite stack, no flicker)
   function animateWalkerOnCarpet(user, avatar, actionLabel, wish) {
     const centralEl = document.getElementById('centralWorshipper');
     if (!centralEl) return;
@@ -278,7 +264,7 @@
     clearProstrationTimers();
     updateCentralWorshipper(user, avatar, actionLabel, wish, false);
 
-    // Khởi động bước đi từ cuối thảm đỏ lên chính điện
+    // Start walking from the back of the aisle to the altar
     centralEl.classList.remove('walking-up');
     void centralEl.offsetWidth;
     centralEl.classList.add('walking-up');
@@ -288,25 +274,25 @@
       schedulePose(step * 185, step % 2 === 0 ? 'walk1' : 'walk2');
     }
 
-    // Khi bước tới trước Lư Hương (2.05s): dừng bước, hạ gối quỳ xuống đệm và bắt đầu Đảnh lễ 3 lạy
+    // On arrival at the candle stand (2.05s): stop, kneel and begin praying
     prostrationTimers.push(
       setTimeout(() => {
         centralEl.classList.remove('walking-up');
       }, 2100)
     );
-    playThreeBowsSequence(2050);
+    playPrayerSequence(2050);
   }
 
-  function updateCentralWorshipper(user, avatar, actionLabel, wish, doThreeBows = true) {
+  function updateCentralWorshipper(user, avatar, actionLabel, wish, doPrayer = true) {
     const nameEl = document.getElementById('centralName');
     const actEl = document.getElementById('centralAction');
     const wishEl = document.getElementById('centralWishBubble');
     const avatarEl = document.getElementById('centralAvatar');
     const beam = document.getElementById('sacredLightBeam');
 
-    if (nameEl) nameEl.textContent = user || 'Thí Chủ Hữu Duyên';
-    if (actEl) actEl.textContent = actionLabel || '✨ Dâng hương cầu an';
-    if (wishEl) wishEl.textContent = `“${wish || 'Nam Mô A Di Đà Phật, cầu bình an cát tường'}”`;
+    if (nameEl) nameEl.textContent = user || 'Friend';
+    if (actEl) actEl.textContent = actionLabel || '🕯️ Lit a candle';
+    if (wishEl) wishEl.textContent = `“${wish || 'Lord, bring peace and comfort to every heart tonight'}”`;
 
     if (avatarEl) {
       if (avatar) {
@@ -316,66 +302,66 @@
       }
     }
 
-    if (doThreeBows) {
+    if (doPrayer) {
       clearProstrationTimers();
       const centralEl = document.getElementById('centralWorshipper');
       if (centralEl) centralEl.classList.remove('walking-up');
-      playThreeBowsSequence(0);
+      playPrayerSequence(0);
     }
     if (beam) {
       beam.classList.add('intense');
       setTimeout(() => beam.classList.remove('intense'), 4500);
     }
 
-    const haloSys = document.getElementById('buddhaHaloSystem');
-    const lotusHand = document.getElementById('lotusHandHalo');
+    const haloSys = document.getElementById('radianceHaloSystem');
+    const altarGlowEl = document.getElementById('altarGlow');
     if (haloSys) {
       haloSys.classList.add('flare');
       setTimeout(() => haloSys.classList.remove('flare'), 3600);
     }
-    if (lotusHand) {
-      lotusHand.classList.add('flare');
-      setTimeout(() => lotusHand.classList.remove('flare'), 3600);
+    if (altarGlowEl) {
+      altarGlowEl.classList.add('flare');
+      setTimeout(() => altarGlowEl.classList.remove('flare'), 3600);
     }
     particles.spawnBellWave(540, 260, 2);
 
-    // Cập nhật dòng thông báo dưới thanh HUD
+    // Update the notice line in the bottom HUD
     const hudName = document.getElementById('devoteeNameLine');
     const hudAct = document.getElementById('devoteeActionTag');
-    if (hudName) hudName.textContent = user || 'Thí Chủ';
-    if (hudAct) hudAct.textContent = actionLabel || 'Dâng hương';
+    if (hudName) hudName.textContent = user || 'Friend';
+    if (hudAct) hudAct.textContent = actionLabel || 'Lit a candle';
   }
 
-  // 6. Cập nhật toàn bộ giao diện theo State từ Server
+  // 6. Update the whole UI from server state
   let hasInitializedRealLeader = false;
 
   function updateUIState(st) {
     if (!st) return;
 
-    document.getElementById('statIncense').textContent = Number(st.totalIncense || 0).toLocaleString('vi-VN');
-    document.getElementById('statMerit').textContent = Number(st.totalMerit || 0).toLocaleString('vi-VN');
-    document.getElementById('statWoodenFish').textContent = Number(st.woodenFishHits || 0).toLocaleString('vi-VN');
+    document.getElementById('statCandles').textContent = Number(st.totalCandles || 0).toLocaleString('en-US');
+    document.getElementById('statBlessings').textContent = Number(st.totalBlessings || 0).toLocaleString('en-US');
+    document.getElementById('statAmen').textContent = Number(st.amenCount || 0).toLocaleString('en-US');
 
-    renderIncenseSticks(st.activeIncenseSticks || 9);
+    renderCandles(st.activeCandles || 9);
 
     const lb = Array.isArray(st.leaderboard) ? st.leaderboard : [];
     renderVipCushions(lb);
     renderCongregationHall(lb);
 
-    // Đồng bộ tên Chủ Lễ mặc định theo người dẫn đầu thực tế nếu chưa có sự kiện mới
+    // Feature the real leaderboard leader until a new event arrives
     if (!hasInitializedRealLeader && lb.length > 0) {
       hasInitializedRealLeader = true;
       const topDev = lb[0];
       updateCentralWorshipper(
         topDev.name,
         topDev.avatar,
-        `✨ Công đức: ${Number(topDev.merit).toLocaleString('vi-VN')} CĐ`,
-        topDev.lastWish || 'Nam Mô A Di Đà Phật, cầu bình an cát tường',
+        `✨ ${Number(topDev.blessings).toLocaleString('en-US')} blessings`,
+        topDev.lastWish || 'Lord, bring peace and comfort to every heart tonight',
         false
       );
     }
 
-    // Cập nhật Bảng TẤM LÒNG THÀNH ở góc dưới phải (Top 4)
+    // Faithful Hearts leaderboard, bottom right (top 4)
     const lbList = document.getElementById('leaderboardList');
     if (lbList) {
       lbList.innerHTML = lb
@@ -385,34 +371,34 @@
           <div class="leader-item">
             <span class="leader-rank">${item.rank}</span>
             <span class="leader-name">${escapeHtml(shortenName(item.name, 14))}</span>
-            <span class="leader-merit">${Number(item.merit).toLocaleString('vi-VN')}</span>
+            <span class="leader-merit">${Number(item.blessings).toLocaleString('en-US')}</span>
           </div>
         `
         )
         .join('');
     }
 
-    // Trạng thái kết nối TikTok Live
+    // TikTok Live connection status
     const liveDot = document.getElementById('liveDot');
     const liveText = document.getElementById('liveStatusText');
     if (st.tiktok?.connected) {
       liveDot.classList.add('connected');
-      liveText.textContent = `LIVE @${st.tiktok.username} • ${st.tiktok.viewerCount || 0} mắt`;
+      liveText.textContent = `LIVE @${st.tiktok.username} • ${st.tiktok.viewerCount || 0} watching`;
     } else if (st.tiktok?.connecting) {
       liveDot.classList.remove('connected');
-      liveText.textContent = `Đang kết nối @${st.tiktok.username}...`;
+      liveText.textContent = `Connecting to @${st.tiktok.username}...`;
     } else {
       liveDot.classList.remove('connected');
       liveText.textContent = st.settings?.autoSim
-        ? 'CHÙA LINH ỨNG • TỰ ĐỘNG GIẢ LẬP ĐÔNG NGƯỜI'
-        : 'CHÙA LINH ỨNG • ĐỨC PHẬT A DI ĐÀ';
+        ? 'GRACE CHAPEL LIVE • DEMO MODE'
+        : 'GRACE CHAPEL LIVE • JOIN US IN PRAYER';
     }
 
     const btnAutoSim = document.getElementById('btnToggleAutoSim');
     if (btnAutoSim && st.settings) {
       btnAutoSim.textContent = st.settings.autoSim
-        ? '🤖 Tự động Giả lập Người Xem: ĐANG BẬT'
-        : '🤖 Tự động Giả lập Người Xem: TẮT';
+        ? '🤖 Demo mode (fake viewers): ON'
+        : '🤖 Demo mode (fake viewers): OFF';
       btnAutoSim.classList.toggle('active-toggle', Boolean(st.settings.autoSim));
     }
     if (st.settings) {
@@ -446,114 +432,113 @@
 
   function formatEventSummary(ev) {
     switch (ev.type) {
-      case 'burnIncense':
-        return `🔥 <strong>${escapeHtml(ev.user)}</strong> dâng ${ev.count} nén nhang (+${ev.merit} CĐ)`;
-      case 'strikeWoodenFish':
-        return `🪵 <strong>${escapeHtml(ev.user)}</strong> gõ mõ ${ev.count} nhịp (+${ev.merit} CĐ)`;
+      case 'lightCandle':
+        return `🕯️ <strong>${escapeHtml(ev.user)}</strong> lit ${ev.count} ${ev.count === 1 ? 'candle' : 'candles'} (+${ev.blessings})`;
+      case 'sayAmen':
+        return `🙌 <strong>${escapeHtml(ev.user)}</strong> said Amen ×${ev.count} (+${ev.blessings})`;
       case 'ringBell':
-        return `🔔 <strong>${escapeHtml(ev.user)}</strong> thỉnh Đại Hồng Chung (+${ev.merit} CĐ)`;
+        return `🔔 <strong>${escapeHtml(ev.user)}</strong> rang the church bell (+${ev.blessings})`;
       case 'sendPrayer':
-        return `🏮 <strong>${escapeHtml(ev.user)}</strong> cầu phúc: “${escapeHtml(ev.wish)}”`;
+        return `🙏 <strong>${escapeHtml(ev.user)}</strong> prayed: “${escapeHtml(ev.wish)}”`;
       case 'offerGift':
       case 'grandCeremony':
-        return `🪷 <strong>${escapeHtml(ev.user)}</strong> dâng <em>${escapeHtml(ev.giftName)}</em> (+${ev.merit} CĐ)`;
-      case 'drawFortune':
-        return `🎋 <strong>${escapeHtml(ev.user)}</strong> gieo được Quẻ số ${ev.fortune?.number} (${ev.fortune?.rank})`;
+        return `💐 <strong>${escapeHtml(ev.user)}</strong> sent <em>${escapeHtml(ev.giftName)}</em> (+${ev.blessings})`;
+      case 'drawVerse':
+        return `📖 <strong>${escapeHtml(ev.user)}</strong> drew ${escapeHtml(ev.verse?.reference || 'a verse')}`;
       default:
-        return `✨ <strong>${escapeHtml(ev.user || 'Thí chủ')}</strong> tương tác`;
+        return `✨ <strong>${escapeHtml(ev.user || 'Friend')}</strong> joined in`;
     }
   }
 
-  // 7. Xử lý hiệu ứng khi có Nghi Thức mới
-  let fortuneTimer = null;
+  // 7. Visual + audio effects for each new interaction
+  let verseTimer = null;
   let grandTimer = null;
 
   function triggerRitualVisuals(ev) {
     if (!ev) return;
 
-    if (ev.ttsText && ev.type !== 'drawFortune') {
-      audio.enqueueTts(ev.ttsText, { voice: ev.ttsVoice || 'maichi' });
+    if (ev.ttsText && ev.type !== 'drawVerse') {
+      audio.enqueueTts(ev.ttsText);
     }
 
     switch (ev.type) {
-      case 'burnIncense': {
-        audio.playIncenseChime();
-        particles.spawnIncenseBurst(540, 895);
-        particles.spawnFloatingMerit(`+${ev.merit} Công Đức`, 540, 860, '#ffe082');
-        animateWalkerOnCarpet(ev.user, ev.avatar, `🔥 Dâng ${ev.count} nén hương (+${ev.merit} CĐ)`, ev.wish);
+      case 'lightCandle': {
+        audio.playCandleChime();
+        particles.spawnCandleBurst(540, 895);
+        particles.spawnFloatingMerit(`+${ev.blessings} Blessings`, 540, 860, '#ffe9a8');
+        animateWalkerOnCarpet(ev.user, ev.avatar, `🕯️ Lit ${ev.count} ${ev.count === 1 ? 'candle' : 'candles'} (+${ev.blessings})`, ev.wish);
         break;
       }
 
-      case 'strikeWoodenFish': {
-        audio.playWoodenFish();
-        pulseHallBowing();
-        particles.spawnFloatingMerit(`+${ev.merit} Công Đức`, 890, 935, '#ffd54f');
+      case 'sayAmen': {
+        audio.playAmenTap();
+        pulseHallPraying();
+        particles.spawnFloatingMerit(`+${ev.blessings} Blessings`, 890, 935, '#ffe9a8');
         break;
       }
 
       case 'ringBell': {
-        audio.playTempleBell(1.0);
-        pulseHallBowing();
+        audio.playChurchBell(1.0);
+        pulseHallPraying();
         particles.spawnBellWave(540, 510, 4);
-        particles.spawnFloatingMerit(`+${ev.merit} Công Đức`, 190, 935, '#fff3b0');
-        updateCentralWorshipper(ev.user, ev.avatar, `🔔 Thỉnh Đại Hồng Chung (+${ev.merit} CĐ)`, ev.wish);
+        particles.spawnFloatingMerit(`+${ev.blessings} Blessings`, 190, 935, '#fff3c4');
+        updateCentralWorshipper(ev.user, ev.avatar, `🔔 Rang the church bell (+${ev.blessings})`, ev.wish);
         break;
       }
 
       case 'sendPrayer': {
-        audio.playIncenseChime();
-        spawnSkyLantern(ev.user, ev.wish);
-        particles.spawnFloatingMerit(`+${ev.merit} Công Đức`, 540, 920, '#ffb74d');
-        animateWalkerOnCarpet(ev.user, ev.avatar, `🏮 Cầu phúc (+${ev.merit} CĐ)`, ev.wish);
+        audio.playCandleChime();
+        spawnPrayerRequest(ev.user, ev.wish);
+        particles.spawnFloatingMerit(`+${ev.blessings} Blessings`, 540, 920, '#ffe9a8');
+        animateWalkerOnCarpet(ev.user, ev.avatar, `🙏 Prayer request (+${ev.blessings})`, ev.wish);
         break;
       }
 
       case 'offerGift': {
-        audio.playIncenseChime();
-        audio.playTempleBell(0.85);
-        particles.spawnIncenseBurst(540, 895);
-        particles.spawnFloatingMerit(`+${ev.merit} Công Đức`, 540, 840, '#fff3b0');
-        animateWalkerOnCarpet(ev.user, ev.avatar, `🪷 Dâng ${ev.giftName} (+${ev.merit} CĐ)`, ev.wish);
+        audio.playCandleChime();
+        audio.playChurchBell(0.8);
+        particles.spawnCandleBurst(540, 895);
+        particles.spawnFloatingMerit(`+${ev.blessings} Blessings`, 540, 840, '#fff3c4');
+        animateWalkerOnCarpet(ev.user, ev.avatar, `💐 ${ev.giftName} (+${ev.blessings})`, ev.wish);
         break;
       }
 
       case 'grandCeremony': {
-        audio.playTempleBell(1.2);
-        setTimeout(() => audio.playTempleBell(1.1), 900);
+        audio.playChurchBell(1.2);
+        setTimeout(() => audio.playChurchBell(1.0), 900);
         particles.spawnGrandCeremonyRain();
-        pulseHallBowing();
-        showGrandCeremonyBanner(ev.user, ev.giftName, ev.merit);
-        animateWalkerOnCarpet(ev.user, ev.avatar, `🐉 ${ev.giftName} (+${ev.merit} CĐ)`, ev.wish);
+        pulseHallPraying();
+        showGrandCeremonyBanner(ev.user, ev.giftName, ev.blessings);
+        animateWalkerOnCarpet(ev.user, ev.avatar, `🕊️ ${ev.giftName} (+${ev.blessings})`, ev.wish);
         break;
       }
 
-      case 'drawFortune': {
-        audio.playFortuneShake();
+      case 'drawVerse': {
+        audio.playPageTurn();
         updateCentralWorshipper(
           ev.user,
           ev.avatar,
-          `🎋 Đang xin xăm...`,
-          `Thí chủ ${ev.user} đang thành tâm xin quẻ...`,
+          `📖 Opening the Bible...`,
+          `${ev.user} is drawing a verse...`,
           false
         );
-        // Chỉ hiển thị tờ Quẻ Xăm đúng thời điểm giọng đọc bắt đầu vang lên!
+        // Show the verse card exactly when the voice starts reading it
         audio.enqueueTts(ev.ttsText || '', {
-          voice: ev.ttsVoice || 'maichi',
           onStart: () => {
-            audio.playIncenseChime();
-            showFortuneModal(ev.user, ev.fortune);
+            audio.playCandleChime();
+            showVerseModal(ev.user, ev.verse);
             updateCentralWorshipper(
               ev.user,
               ev.avatar,
-              `🎋 Quẻ số ${ev.fortune?.number} (${ev.fortune?.rank})`,
-              ev.fortune?.meaning || '',
+              `📖 ${ev.verse?.reference || ''}`,
+              ev.verse?.reflection || '',
               true
             );
           },
           onEnd: () => {
-            clearTimeout(fortuneTimer);
-            fortuneTimer = setTimeout(() => {
-              document.getElementById('fortuneModal')?.classList.remove('visible');
+            clearTimeout(verseTimer);
+            verseTimer = setTimeout(() => {
+              document.getElementById('verseModal')?.classList.remove('visible');
             }, 1800);
           }
         });
@@ -562,47 +547,47 @@
     }
   }
 
-  function spawnSkyLantern(user, wish) {
+  function spawnPrayerRequest(user, wish) {
     const layer = document.getElementById('skyLanternsLayer');
     if (!layer) return;
-    const lantern = document.createElement('div');
-    lantern.className = 'sky-lantern';
+    const card = document.createElement('div');
+    card.className = 'sky-lantern';
     const leftPos = 80 + Math.floor(Math.random() * 640);
-    lantern.style.left = `${leftPos}px`;
-    lantern.innerHTML = `
+    card.style.left = `${leftPos}px`;
+    card.innerHTML = `
       <div class="sky-lantern-user">🙏 ${escapeHtml(user)}</div>
       <div class="sky-lantern-wish">“${escapeHtml(wish)}”</div>
     `;
-    layer.appendChild(lantern);
+    layer.appendChild(card);
     setTimeout(() => {
-      lantern.remove();
+      card.remove();
     }, 10600);
   }
 
-  function showFortuneModal(user, fortune) {
-    if (!fortune) return;
-    const modal = document.getElementById('fortuneModal');
-    document.getElementById('fortuneRankBadge').textContent = fortune.rank.toUpperCase();
-    document.getElementById('fortuneTitle').textContent = `Quẻ Số ${fortune.number} — ${fortune.title}`;
-    document.getElementById('fortuneDevotee').textContent = `Thí chủ cầu quẻ: ${user}`;
-    document.getElementById('fortunePoem').textContent = fortune.poem;
-    document.getElementById('fortuneMeaning').textContent = `Lời bàn: ${fortune.meaning}`;
+  function showVerseModal(user, verse) {
+    if (!verse) return;
+    const modal = document.getElementById('verseModal');
+    document.getElementById('verseThemeBadge').textContent = verse.theme.toUpperCase();
+    document.getElementById('verseTitle').textContent = `${verse.reference} — ${verse.title}`;
+    document.getElementById('verseDevotee').textContent = `Verse for ${user}`;
+    document.getElementById('verseText').textContent = `“${verse.text}”`;
+    document.getElementById('verseReflection').textContent = verse.reflection;
 
     modal.classList.add('visible');
-    clearTimeout(fortuneTimer);
-    fortuneTimer = setTimeout(() => {
+    clearTimeout(verseTimer);
+    verseTimer = setTimeout(() => {
       modal.classList.remove('visible');
-    }, 15000);
+    }, 22000);
   }
 
-  document.getElementById('fortuneModal')?.addEventListener('click', () => {
-    document.getElementById('fortuneModal').classList.remove('visible');
+  document.getElementById('verseModal')?.addEventListener('click', () => {
+    document.getElementById('verseModal').classList.remove('visible');
   });
 
-  function showGrandCeremonyBanner(user, giftName, merit) {
+  function showGrandCeremonyBanner(user, giftName, blessings) {
     const banner = document.getElementById('grandCeremonyBanner');
-    document.getElementById('grandTitle').textContent = `🐉 ${giftName.toUpperCase()} 🐉`;
-    document.getElementById('grandSub').textContent = `Đại Thí Chủ ${user} • Công Đức Vô Lượng (+${merit} CĐ)`;
+    document.getElementById('grandTitle').textContent = `🕊️ ${giftName.toUpperCase()} 🕊️`;
+    document.getElementById('grandSub').textContent = `Thank you, ${user} • +${blessings} Blessings for our church family`;
     banner.classList.add('visible');
     clearTimeout(grandTimer);
     grandTimer = setTimeout(() => {
@@ -610,7 +595,7 @@
     }, 6800);
   }
 
-  // 8. Kết nối JSON-RPC 2.0 WebSocket & Gửi Lệnh RPC
+  // 8. JSON-RPC 2.0 WebSocket connection & RPC calls
   let ws = null;
   let rpcId = 1;
 
@@ -621,17 +606,14 @@
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        if (msg.method === 'temple.state') {
+        if (msg.method === 'church.state') {
           updateUIState(msg.params);
-        } else if (msg.method === 'temple.event') {
+        } else if (msg.method === 'church.event') {
           if (msg.params?.state) updateUIState(msg.params.state);
           if (msg.params?.event) triggerRitualVisuals(msg.params.event);
         } else if (msg.method === 'tts.play') {
-          if (msg.params?.url) {
-            audio.enqueueTts(msg.params.text || 'Nam mô A Di Đà Phật', {
-              voice: msg.params.voice || 'maichi',
-              url: msg.params.url
-            });
+          if (msg.params?.text) {
+            audio.enqueueTts(msg.params.text);
           }
         }
       } catch (_) {}
@@ -667,100 +649,59 @@
   }
 
   function getFormInput() {
-    const user = document.getElementById('inputDevoteeName')?.value.trim() || 'Quỳnh_Finn';
+    const user = document.getElementById('inputDevoteeName')?.value.trim() || 'Grace M.';
     const wish =
       document.getElementById('inputDevoteeWish')?.value.trim() ||
-      'Cầu cho gia đình bình an, tài lộc hanh thông';
+      'Please bless my family with health, peace and joy';
     return { user, wish };
   }
 
-  // Gắn sự kiện tương tác trực tiếp trên màn hình 9:16 & Thanh HUD dưới đáy
-  document.getElementById('incenseBurnerZone')?.addEventListener('click', () => {
+  // Tap targets on the 9:16 stage and the bottom HUD cards
+  const candleAction = () => {
     const { user, wish } = getFormInput();
-    callRpc('temple.burnIncense', { user, count: 3, wish });
-  });
-
-  document.getElementById('cardIncense')?.addEventListener('click', () => {
+    callRpc('church.lightCandle', { user, count: 3, wish });
+  };
+  const prayerAction = () => {
     const { user, wish } = getFormInput();
-    callRpc('temple.burnIncense', { user, count: 3, wish });
-  });
-
-  document.getElementById('cardBlessing')?.addEventListener('click', () => {
+    callRpc('church.sendPrayer', { user, wish });
+  };
+  const lilyAction = () => {
     const { user, wish } = getFormInput();
-    callRpc('temple.sendPrayer', { user, wish });
-  });
-
-  document.getElementById('cardLotus')?.addEventListener('click', () => {
+    callRpc('church.offerGift', { user, giftType: 'lily', coins: 20, giftName: 'White Lily Bouquet', wish });
+  };
+  const bellAction = () => {
     const { user, wish } = getFormInput();
-    callRpc('temple.offerGift', {
-      user,
-      giftType: 'lotus',
-      coins: 20,
-      giftName: 'Đài Hoa Sen Vàng',
-      wish
-    });
-  });
+    callRpc('church.ringBell', { user, count: 1, wish, readTts: true });
+  };
+  const verseAction = () => {
+    const { user, wish } = getFormInput();
+    callRpc('church.drawVerse', { user, topic: wish });
+  };
 
-  document.getElementById('woodenFishStation')?.addEventListener('click', () => {
+  document.getElementById('candleStandZone')?.addEventListener('click', candleAction);
+  document.getElementById('cardCandle')?.addEventListener('click', candleAction);
+  document.getElementById('cardPrayer')?.addEventListener('click', prayerAction);
+  document.getElementById('cardLily')?.addEventListener('click', lilyAction);
+  document.getElementById('bellStation')?.addEventListener('click', bellAction);
+  document.getElementById('verseStation')?.addEventListener('click', verseAction);
+  document.getElementById('amenStation')?.addEventListener('click', () => {
     const { user } = getFormInput();
-    callRpc('temple.strikeWoodenFish', { user, count: 1 });
+    callRpc('church.sayAmen', { user, count: 1 });
   });
 
-  document.getElementById('bellStation')?.addEventListener('click', () => {
-    const { user, wish } = getFormInput();
-    callRpc('temple.ringBell', { user, count: 1, wish, readTts: true });
-  });
-
-  document.getElementById('fortuneCylinder')?.addEventListener('click', () => {
-    const { user, wish } = getFormInput();
-    callRpc('temple.drawFortune', { user, topic: wish });
-  });
-
-  // Các nút trên Quick RPC Dock bên phải
-  document.getElementById('btnRpcIncense')?.addEventListener('click', () => {
-    const { user, wish } = getFormInput();
-    callRpc('temple.burnIncense', { user, count: 3, wish });
-  });
-
-  document.getElementById('btnRpcLantern')?.addEventListener('click', () => {
-    const { user, wish } = getFormInput();
-    callRpc('temple.sendPrayer', { user, wish });
-  });
-
-  document.getElementById('btnRpcWoodenFish')?.addEventListener('click', () => {
+  // Quick RPC dock buttons
+  document.getElementById('btnRpcCandle')?.addEventListener('click', candleAction);
+  document.getElementById('btnRpcPrayer')?.addEventListener('click', prayerAction);
+  document.getElementById('btnRpcAmen')?.addEventListener('click', () => {
     const { user } = getFormInput();
-    callRpc('temple.strikeWoodenFish', { user, count: 5 });
+    callRpc('church.sayAmen', { user, count: 5 });
   });
-
-  document.getElementById('btnRpcBell')?.addEventListener('click', () => {
-    const { user, wish } = getFormInput();
-    callRpc('temple.ringBell', { user, count: 1, wish, readTts: true });
-  });
-
-  document.getElementById('btnRpcFortune')?.addEventListener('click', () => {
-    const { user, wish } = getFormInput();
-    callRpc('temple.drawFortune', { user, topic: wish });
-  });
-
-  document.getElementById('btnRpcGiftLotus')?.addEventListener('click', () => {
-    const { user, wish } = getFormInput();
-    callRpc('temple.offerGift', {
-      user,
-      giftType: 'lotus',
-      coins: 20,
-      giftName: 'Đài Hoa Sen Vàng',
-      wish
-    });
-  });
-
+  document.getElementById('btnRpcBell')?.addEventListener('click', bellAction);
+  document.getElementById('btnRpcVerse')?.addEventListener('click', verseAction);
+  document.getElementById('btnRpcGiftLily')?.addEventListener('click', lilyAction);
   document.getElementById('btnRpcGrandCeremony')?.addEventListener('click', () => {
     const { user, wish } = getFormInput();
-    callRpc('temple.grandCeremony', {
-      user,
-      coins: 299,
-      giftName: 'Đại Lễ Kim Long Chầu Phật',
-      wish
-    });
+    callRpc('church.grandCeremony', { user, coins: 299, giftName: 'Hallelujah Celebration', wish });
   });
 
   document.getElementById('btnConnectTikTok')?.addEventListener('click', () => {
@@ -778,7 +719,7 @@
   document.getElementById('btnToggleTts')?.addEventListener('click', (e) => {
     audio.ttsEnabled = !audio.ttsEnabled;
     const btn = e.currentTarget;
-    btn.textContent = `🎙️ Giọng Đọc: ${audio.ttsEnabled ? 'BẬT' : 'TẮT'}`;
+    btn.textContent = `🎙️ Voice: ${audio.ttsEnabled ? 'ON' : 'OFF'}`;
     btn.classList.toggle('active-toggle', audio.ttsEnabled);
   });
 
@@ -790,11 +731,11 @@
       audio.stopZenAmbience();
     }
     const btn = e.currentTarget;
-    btn.textContent = `🎵 Nhạc Nền: ${audio.bgMusicEnabled ? 'BẬT' : 'TẮT'}`;
+    btn.textContent = `🎵 Music: ${audio.bgMusicEnabled ? 'ON' : 'OFF'}`;
     btn.classList.toggle('active-toggle', audio.bgMusicEnabled);
   });
 
-  // Khởi tạo và gắn sự kiện thanh trượt chỉnh âm lượng Nhạc nền & Giọng đọc
+  // Music & voice volume sliders
   const sliderMusicVol = document.getElementById('sliderMusicVol');
   const valMusicVol = document.getElementById('valMusicVol');
   if (sliderMusicVol && valMusicVol) {
@@ -809,7 +750,7 @@
     });
     sliderMusicVol.addEventListener('change', (e) => {
       const pct = Number(e.target.value);
-      callRpc('temple.updateSettings', { musicVolume: +(pct / 100).toFixed(2) });
+      callRpc('church.updateSettings', { musicVolume: +(pct / 100).toFixed(2) });
     });
   }
 
@@ -826,7 +767,7 @@
     });
     sliderTtsVol.addEventListener('change', (e) => {
       const pct = Number(e.target.value);
-      callRpc('temple.updateSettings', { ttsVolume: +(pct / 100).toFixed(2) });
+      callRpc('church.updateSettings', { ttsVolume: +(pct / 100).toFixed(2) });
     });
   }
 
